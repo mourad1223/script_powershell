@@ -3,7 +3,9 @@
     Vérifie l’espace disque disponible sur un ou plusieurs serveurs.
 
 .DESCRIPTION
-    Ce script interroge les lecteurs physiques (type 3) sur des serveurs distants et affiche l’espace libre et total. Il signale également les disques en dessous d’un seuil défini.
+    Ce script interroge les lecteurs physiques (type 3) sur des serveurs distants
+    et affiche l’espace libre et total. Il signale également les disques en dessous
+    d’un seuil défini.
 
 .PARAMETER Servers
     Liste des serveurs à analyser (par défaut : localhost).
@@ -14,6 +16,7 @@
 .EXAMPLE
     .\Check-DiskSpace.ps1 -Servers @("Server1", "Server2") -ThresholdGB 15
 #>
+
 param(
     [string[]]$Servers = @("localhost"),
     [int]$ThresholdGB = 10
