@@ -1,19 +1,37 @@
-# NEOINFRA
-Projet ESGI M1 NEOINFRA
-# 🏗️ Projet ESGI M1 – NEOINFRA
 
-## 📌 Description
+# 🛠️ Scripts PowerShell pour Infrastructure Active Directory et Serveurs Fichiers
 
-Ce dépôt Git regroupe l'ensemble des scripts PowerShell et fichiers techniques développés dans le cadre du projet annuel **NEOINFRA**, réalisé en M1 ESGI – filière SRC (Systèmes, Réseaux & Cloud).
-
-Le projet visait à concevoir et déployer une infrastructure virtuelle complète, incluant :
-- Deux hôtes **VMware ESXi** avec stockage partagé
-- Un **Active Directory local** + intégration Azure AD (partielle)
-- Un système de **supervision Zabbix**
-- Une **infrastructure réseau sécurisée** avec VLANs et **pare-feu FortiGate**
-- Des accès **VPN distants** pour les utilisateurs
+Ce dépôt regroupe une collection de scripts PowerShell destinés à automatiser le déploiement, la configuration et la gestion d'une infrastructure Active Directory (AD), des serveurs de fichiers, ainsi que des services tels que DFS-R (Distributed File System Replication).
 
 ---
+
+## 📋 Objectifs
+
+- Déploiement rapide d’un environnement Active Directory structuré
+- Création automatique d’utilisateurs et d’unités organisationnelles
+- Configuration centralisée du DFS-R pour la réplication de données
+- Gestion des permissions NTFS et des partages SMB
+- Vérification de la bonne réplication et de la cohérence entre serveurs
+
+---
+
+## ⚙️ Prérequis
+
+- Windows Server avec PowerShell 5.1 ou plus
+- Droits d’administrateur sur les serveurs cibles
+- PowerShell Remoting activé (`Enable-PSRemoting`)
+- Modules nécessaires : `ActiveDirectory`, `DFSR`, `SmbShare`...
+
+---
+
+## 🚀 Utilisation
+
+1. Clonez le dépôt sur votre machine d’administration :
+
+```powershell
+git clone https://github.com/votre-utilisateur/nom-du-repo.git
+cd nom-du-repo
+
 
 ## 📂 Contenu du dépôt
 
@@ -33,23 +51,4 @@ Le projet visait à concevoir et déployer une infrastructure virtuelle complèt
 
 ---
 
-## 🧪 Objectif pédagogique
 
-- Automatiser les tâches d'administration avec PowerShell
-- Structurer un environnement Active Directory de manière industrialisée
-- Documenter et versionner le travail réalisé dans un dépôt Git centralisé
-- Capitaliser les scripts pour réutilisation future ou démonstration technique
-
----
-
-## 🔒 Accès & usage
-
-Ce dépôt est public à but pédagogique. Merci de ne pas l’utiliser en production sans vérification préalable.
-
----
-
-## 👤 Auteur
-
-Mourad / Qunetin / Emilie*  
-Projet réalisé avec Quentin, Émilie – M1 SRC – ESGI Nantes 
-Juillet 2025
