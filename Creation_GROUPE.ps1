@@ -1,54 +1,87 @@
-﻿Import-Module ActiveDirectory
+<#
+.SYNOPSIS
+    Crée automatiquement des groupes AD (Global + DomainLocal) pour chaque service spécifié,
+    et établit les liens entre eux selon le modèle AGDLP.
 
-# Configuration
-$domain = "neoinfra.fr"
-$ouGroupes = "OU=Groupes,DC=neoinfra,DC=fr"  # OU cible pour les groupes
+.DESCRIPTION
+    Pour chaque service :
+    - Crée un groupe Global (G_<service>)
+    - Crée un groupe DomainLocal (DL_<service>_PARTAGE)
+    - Ajoute le groupe global dans le domaine local
 
-# Vérifier si l'OU existe, sinon la créer
-if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$ouGroupes'" -ErrorAction SilentlyContinue)) {
-    New-ADOrganizationalUnit -Name "Groupes" -Path "DC=neoinfra,DC=fr"
-    Write-Host "📁 OU 'Groupes' créée."
-} else {
-    Write-Host "📂 OU 'Groupes' existe déjà."
-}
+.PARAMETER DomainName
+    Nom DNS du domaine (ex: "entreprise.local")
 
-# Liste des services
-$services = @(
-    "COMMERCIAL",
-    "PREPRESSE",
-    "PRODUCTION",
-    "MAINTENANCE",
-    "RH",
-    "DIRECTION",
-    "COMMUN"
+.PARAMETER GroupOU
+    OU cible pour créer les groupes (DN complet, ex: "OU=Groupes,DC=entreprise,DC=local")
+
+.PARAMETER Services
+    Liste des services pour lesquels créer les groupes
+
+.EXAMPLE
+    .\Create-AdGroups.ps1 -DomainName "entreprise.local" -GroupOU "OU=Groupes,DC=entreprise,DC=local" -Services @("IT", "HR", "COMM")
+
+.NOTES
+    Auteur : Ton Nom  
+    GitHub : https://github.com/ton-compte/Create-AdGroups
+#>
+
+param (
+    [Parameter(Mandatory = $true)]
+    [string]$DomainName,
+
+    [Parameter(Mandatory = $true)]
+    [string]$GroupOU,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Services
 )
 
-foreach ($service in $services) {
-    $gg = "G_$service"             # Groupe global
-    $dl = "DL_${service}_PARTAGE"  # Groupe domaine local
+Import-Module ActiveDirectory
+
+# Vérification de l’OU "Groupes"
+if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$GroupOU'" -ErrorAction SilentlyContinue)) {
+    try {
+        $ouName = ($GroupOU -split ",")[0].Replace("OU=", "")
+        $ouPath = ($GroupOU -split ",", 2)[1]
+        New-ADOrganizationalUnit -Name $ouName -Path $ouPath -ProtectedFromAccidentalDeletion $true
+        Write-Host "📁 OU créée : $GroupOU"
+    } catch {
+        Write-Warning "❌ Impossible de créer l'OU : $GroupOU → $_"
+        exit
+    }
+} else {
+    Write-Host "📂 OU déjà existante : $GroupOU"
+}
+
+# Création des groupes pour chaque service
+foreach ($service in $Services) {
+    $groupGlobal = "G_$service"
+    $groupLocal = "DL_${service}_PARTAGE"
 
     # Créer le groupe global
-    if (-not (Get-ADGroup -Filter { Name -eq $gg })) {
-        New-ADGroup -Name $gg -GroupScope Global -GroupCategory Security -Path $ouGroupes
-        Write-Host "✅ Groupe global créé : $gg"
+    if (-not (Get-ADGroup -Filter { Name -eq $groupGlobal })) {
+        New-ADGroup -Name $groupGlobal -GroupScope Global -GroupCategory Security -Path $GroupOU
+        Write-Host "✅ Groupe global créé : $groupGlobal"
     } else {
-        Write-Host "⚠️ Groupe global déjà existant : $gg"
+        Write-Host "✔️ Groupe global déjà existant : $groupGlobal"
     }
 
     # Créer le groupe domaine local
-    if (-not (Get-ADGroup -Filter { Name -eq $dl })) {
-        New-ADGroup -Name $dl -GroupScope DomainLocal -GroupCategory Security -Path $ouGroupes
-        Write-Host "✅ Groupe domaine local créé : $dl"
+    if (-not (Get-ADGroup -Filter { Name -eq $groupLocal })) {
+        New-ADGroup -Name $groupLocal -GroupScope DomainLocal -GroupCategory Security -Path $GroupOU
+        Write-Host "✅ Groupe domaine local créé : $groupLocal"
     } else {
-        Write-Host "⚠️ Groupe domaine local déjà existant : $dl"
+        Write-Host "✔️ Groupe domaine local déjà existant : $groupLocal"
     }
 
-    # Ajouter le groupe global dans le groupe domaine local
+    # Ajouter le groupe global au groupe local
     try {
-        Add-ADGroupMember -Identity $dl -Members $gg -ErrorAction Stop
-        Write-Host "🔁 $gg ajouté à $dl"
-    }
-    catch {
-        Write-Host "⚠️ $gg est déjà membre de $dl ou erreur: $_"
+        Add-ADGroupMember -Identity $groupLocal -Members $groupGlobal -ErrorAction Stop
+        Write-Host "🔁 Ajouté : $groupGlobal ➜ $groupLocal"
+    } catch {
+        Write-Warning "⚠️ $groupGlobal est peut-être déjà membre de $groupLocal → $_"
     }
 }
+
+Write-Host "`n✅ Création des groupes terminée." -ForegroundColor Green
