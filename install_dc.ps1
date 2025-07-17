@@ -52,4 +52,21 @@ param (
     [bool]$InstallDNS = $true,
 
     [string]$DatabasePath = "C:\Windows\NTDS",
-    [string]$LogPath =
+    [string]$LogPath = "C:\Windows\NTDS",
+    [string]$SysvolPath = "C:\Windows\SYSVOL"
+)
+
+Import-Module ADDSDeployment
+
+Install-ADDSForest `
+    -CreateDnsDelegation:$false `
+    -DatabasePath $DatabasePath `
+    -DomainMode $DomainMode `
+    -DomainName $DomainName `
+    -DomainNetbiosName $NetbiosName `
+    -ForestMode $ForestMode `
+    -InstallDns:$InstallDNS `
+    -LogPath $LogPath `
+    -SysvolPath $SysvolPath `
+    -NoRebootOnCompletion:$false `
+    -Force:$true
