@@ -1,96 +1,133 @@
-﻿# Variables
-$servers = @("w22-fichier01", "w22-fichier02")
-$domainNamespace = "\\neoinfra.fr\Partages"
-$shares = @(
-    "COMMERCIAL",
-    "PREPRESSE",
-    "PRODUCTION",
-    "MAINTENANCE",
-    "RH",
-    "DIRECTION",
-    "COMMUN"
-)
-$localPathRoot = "E:\Partages"
+<#
+.SYNOPSIS
+    Configure un namespace DFS, ajoute les cibles, et met en place la réplication DFS-R entre plusieurs serveurs.
 
-# 1. Créer le namespace DFS domaine
-Write-Host "Création du namespace DFS domaine $domainNamespace ..."
-Try {
-    New-DfsNamespace -Name "Partages" -Path $domainNamespace -Type DomainV2 -ErrorAction Stop
-    Write-Host "Namespace DFS créé."
-} Catch {
-    Write-Warning "Namespace DFS déjà existant ou erreur : $_"
+.DESCRIPTION
+    Ce script crée :
+    - Un namespace DFS domaine
+    - Des dossiers cibles (folder targets) pour chaque partage
+    - Des groupes de réplication DFS-R
+    - Les membres, connexions et chemins locaux pour la réplication
+
+.PARAMETER Servers
+    Liste des serveurs hébergeant les partages DFS
+
+.PARAMETER DomainNamespace
+    Chemin DFS du namespace (ex : \\domain.local\Partages)
+
+.PARAMETER Shares
+    Liste des noms de partages DFS (et dossiers) à configurer
+
+.PARAMETER LocalPathRoot
+    Racine locale des dossiers partagés sur chaque serveur (ex : E:\Partages)
+
+.EXAMPLE
+    .\Setup-DfsStructure.ps1 -Servers @("FS01", "FS02") -DomainNamespace "\\domain.local\Partages" -Shares @("RH", "IT") -LocalPathRoot "D:\Shares"
+
+.NOTES
+    Auteur : Ton Nom
+    GitHub : https://github.com/ton-compte/Setup-DfsStructure
+#>
+
+param (
+    [Parameter(Mandatory = $true)]
+    [string[]]$Servers,
+
+    [Parameter(Mandatory = $true)]
+    [string]$DomainNamespace,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$Shares,
+
+    [Parameter(Mandatory = $true)]
+    [string]$LocalPathRoot
+)
+
+# 1. Créer le namespace DFS
+Write-Host "🛠️ Création du namespace DFS domaine $DomainNamespace ..."
+try {
+    New-DfsNamespace -Name ($DomainNamespace.Split('\')[-1]) -Path $DomainNamespace -Type DomainV2 -ErrorAction Stop
+    Write-Host "✅ Namespace DFS créé."
+} catch {
+    Write-Warning "⚠️ Namespace DFS déjà existant ou erreur : $_"
 }
 
-# 2. Ajouter les dossiers cibles (targets) dans le namespace DFS
-foreach ($share in $shares) {
-    $folderPath = "$domainNamespace\$share"
-    Write-Host "Ajout des dossiers cibles DFS pour $folderPath ..."
-    
-    foreach ($server in $servers) {
+# 2. Ajouter les cibles dans le namespace
+foreach ($share in $Shares) {
+    $folderPath = "$DomainNamespace\$share"
+    Write-Host "`n📁 Traitement du partage DFS : $folderPath"
+
+    foreach ($server in $Servers) {
         $targetPath = "\\$server\PARTAGE_$share"
-        Try {
-            # Ajout du dossier cible uniquement s'il n'existe pas déjà
+        try {
             $existingTargets = Get-DfsnFolderTarget -Path $folderPath -ErrorAction SilentlyContinue
             if ($existingTargets -and $existingTargets.TargetPath -contains $targetPath) {
-                Write-Host "Cible $targetPath déjà présente pour $folderPath"
+                Write-Host "   ➖ Cible déjà présente : $targetPath"
             } else {
                 Add-DfsnFolderTarget -Path $folderPath -TargetPath $targetPath -ErrorAction Stop
-                Write-Host "Cible $targetPath ajoutée pour $folderPath"
+                Write-Host "   ✅ Cible ajoutée : $targetPath"
             }
-        } Catch {
-            Write-Warning "Erreur lors de l'ajout de la cible $targetPath : $_"
+        } catch {
+            Write-Warning "   ❌ Erreur ajout cible $targetPath : $_"
         }
     }
 }
 
-# 3. Configurer la réplication DFS
-foreach ($share in $shares) {
+# 3. Configurer la réplication DFS-R
+foreach ($share in $Shares) {
     $rgName = "RG_$share"
-    Write-Host "Création du groupe de réplication $rgName ..."
-    Try {
+    Write-Host "`n🔄 Configuration DFS-R pour $share (groupe $rgName)"
+
+    # Créer le groupe
+    try {
         New-DfsReplicationGroup -GroupName $rgName -ErrorAction Stop
-        Write-Host "Groupe de réplication $rgName créé."
-    } Catch {
-        Write-Warning "Groupe $rgName déjà existant ou erreur : $_"
+        Write-Host "   ✅ Groupe DFS-R $rgName créé."
+    } catch {
+        Write-Warning "   ⚠️ Groupe $rgName déjà existant ou erreur : $_"
     }
-    
+
     # Ajouter les membres
-    foreach ($server in $servers) {
-        Try {
+    foreach ($server in $Servers) {
+        try {
             Add-DfsrMember -GroupName $rgName -ComputerName $server -ErrorAction Stop
-            Write-Host "Serveur $server ajouté au groupe $rgName"
-        } Catch {
-            Write-Warning "Serveur $server déjà membre ou erreur : $_"
+            Write-Host "   ➕ $server ajouté à $rgName"
+        } catch {
+            Write-Warning "   ⚠️ $server déjà membre ou erreur : $_"
         }
     }
 
     # Créer le dossier répliqué
-    Try {
+    try {
         New-DfsReplicatedFolder -GroupName $rgName -FolderName $share -ErrorAction Stop
-        Write-Host "Dossier répliqué $share créé dans $rgName"
-    } Catch {
-        Write-Warning "Dossier $share déjà présent dans $rgName ou erreur : $_"
+        Write-Host "   ✅ Dossier répliqué $share créé"
+    } catch {
+        Write-Warning "   ⚠️ Dossier $share déjà présent ou erreur : $_"
     }
 
-    # Ajouter les connexions entre serveurs
-    Try {
-        Add-DfsrConnection -GroupName $rgName -SourceComputerName $servers[0] -DestinationComputerName $servers[1] -ErrorAction Stop
-        Add-DfsrConnection -GroupName $rgName -SourceComputerName $servers[1] -DestinationComputerName $servers[0] -ErrorAction Stop
-        Write-Host "Connexions de réplication configurées pour $rgName"
-    } Catch {
-        Write-Warning "Erreur lors de la configuration des connexions : $_"
+    # Ajouter connexions de réplication bidirectionnelles
+    for ($i = 0; $i -lt $Servers.Count; $i++) {
+        for ($j = 0; $j -lt $Servers.Count; $j++) {
+            if ($i -ne $j) {
+                try {
+                    Add-DfsrConnection -GroupName $rgName -SourceComputerName $Servers[$i] -DestinationComputerName $Servers[$j] -ErrorAction Stop
+                    Write-Host "   🔁 Connexion ajoutée : $($Servers[$i]) ➝ $($Servers[$j])"
+                } catch {
+                    Write-Warning "   ⚠️ Connexion déjà existante ou erreur : $_"
+                }
+            }
+        }
     }
 
-    # Configurer les chemins locaux pour chaque membre
-    foreach ($server in $servers) {
-        $localPath = Join-Path $localPathRoot $share
-        Try {
+    # Configurer les chemins locaux
+    foreach ($server in $Servers) {
+        $localPath = Join-Path $LocalPathRoot $share
+        try {
             Set-DfsrMembership -GroupName $rgName -FolderName $share -ComputerName $server -LocalPath $localPath -ErrorAction Stop
-            Write-Host "Chemin local $localPath configuré pour $server dans $rgName"
-        } Catch {
-            Write-Warning "Erreur lors de la configuration du chemin local sur $server : $_"
+            Write-Host "   🗂️ Chemin local défini : $server ➝ $localPath"
+        } catch {
+            Write-Warning "   ❌ Erreur chemin local sur $server : $_"
         }
     }
 }
 
-Write-Host "=== Configuration DFS terminée ==="
+Write-Host "`n🎯 Configuration DFS terminée avec succès." -ForegroundColor Green
