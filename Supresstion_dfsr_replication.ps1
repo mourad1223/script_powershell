@@ -40,4 +40,23 @@ foreach ($item in $ReplicationItems) {
     try {
         $folderExists = Get-DfsReplicatedFolder -GroupName $group -FolderName $folder -ErrorAction Stop
         if ($folderExists) {
-            Remove-DfsReplicatedFolder -GroupName $group -FolderName $folder -Co
+            Remove-DfsReplicatedFolder -GroupName $group -FolderName $folder -Confirm:$false
+            Write-Host "🗑️ Dossier répliqué supprimé : $folder"
+        }
+    } catch {
+        Write-Warning "⚠️ Aucun dossier répliqué trouvé ou erreur pour : $folder → $($_.Exception.Message)"
+    }
+
+    # Supprimer le groupe de réplication
+    try {
+        $groupExists = Get-DfsReplicationGroup -GroupName $group -ErrorAction Stop
+        if ($groupExists) {
+            Remove-DfsReplicationGroup -GroupName $group -Confirm:$false
+            Write-Host "🗑️ Groupe de réplication supprimé : $group"
+        }
+    } catch {
+        Write-Warning "⚠️ Aucun groupe trouvé ou erreur pour : $group → $($_.Exception.Message)"
+    }
+}
+
+Write-Host "`n✅ Nettoyage terminé." -ForegroundColor Green
