@@ -1,91 +1,113 @@
-﻿# Variables
-$userToRemove = "NEOINFRA\b.beugre"
-$domainAdmin = "NEOINFRA\Administrateur"
+<#
+.SYNOPSIS
+    Supprime un utilisateur d'une liste de partages SMB et de dossiers NTFS, puis ajoute un autre utilisateur (par défaut un compte admin).
 
-# Liste des partages SMB et chemins NTFS correspondants
-$sharesAndPaths = @{
-    "partages"              = "E:\partages"
-    "PARTAGE_COMMERCIAL"    = "E:\Partages\COMMERCIAL"
-    "PARTAGE_COMMUN"        = "E:\Partages\COMMUN"
-    "PARTAGE_DIRECTION"     = "E:\Partages\DIRECTION"
-    "PARTAGE_MAINTENANCE"   = "E:\Partages\MAINTENANCE"
-    "PARTAGE_PREPRESSE"     = "E:\Partages\PREPRESSE"
-    "PARTAGE_PRODUCTION"    = "E:\Partages\PRODUCTION"
-    "PARTAGE_RH"            = "E:\Partages\RH"
-}
+.DESCRIPTION
+    Pour chaque partage défini, le script :
+    - Supprime les droits SMB et NTFS de l'utilisateur ciblé
+    - Ajoute un utilisateur de remplacement (avec droits complets)
+    - S'assure que les chemins existent avant traitement
 
-# Fonction pour gérer les permissions SMB
+.PARAMETER UserToRemove
+    Nom de l'utilisateur à retirer des permissions (ex : "DOMAIN\user")
+
+.PARAMETER UserToAdd
+    Nom du compte à ajouter (avec droits complets) (ex : "DOMAIN\Admin")
+
+.PARAMETER ShareAndPathMap
+    Dictionnaire des partages SMB (clés) et leurs chemins NTFS (valeurs)
+
+.EXAMPLE
+    $map = @{
+        "PARTAGE_IT" = "E:\Partages\IT"
+        "PARTAGE_RH" = "E:\Partages\RH"
+    }
+
+    .\Update-ShareAndNtfsPermissions.ps1 -UserToRemove "DOMAIN\user1" -UserToAdd "DOMAIN\Administrateur" -ShareAndPathMap $map
+
+.NOTES
+    Auteur : Ton Nom  
+    GitHub : https://github.com/ton-compte/Update-ShareAndNtfsPermissions
+#>
+
+param (
+    [Parameter(Mandatory = $true)]
+    [string]$UserToRemove,
+
+    [Parameter(Mandatory = $true)]
+    [string]$UserToAdd,
+
+    [Parameter(Mandatory = $true)]
+    [hashtable]$ShareAndPathMap
+)
+
 function Update-SmbShareAccess {
     param(
-        [string]$shareName,
-        [string]$userToRemove,
-        [string]$userToAdd
+        [string]$ShareName,
+        [string]$UserToRemove,
+        [string]$UserToAdd
     )
 
-    Write-Output "Traitement SMB du partage : $shareName"
+    Write-Output "`n🔧 Traitement SMB du partage : $ShareName"
 
-    # Supprimer utilisateur à retirer (silencieux si pas trouvé)
     try {
-        Revoke-SmbShareAccess -Name $shareName -AccountName $userToRemove -Force -ErrorAction Stop
-        Write-Output "Retiré $userToRemove des permissions SMB sur $shareName"
+        Revoke-SmbShareAccess -Name $ShareName -AccountName $UserToRemove -Force -ErrorAction Stop
+        Write-Output "   ❌ Supprimé $UserToRemove des droits SMB"
     } catch {
-        Write-Output "$userToRemove non présent dans $shareName, pas de suppression nécessaire"
+        Write-Output "   ℹ️ $UserToRemove non présent sur $ShareName"
     }
 
-    # Ajouter administrateur domaine avec Full
     try {
-        Grant-SmbShareAccess -Name $shareName -AccountName $userToAdd -AccessRight Full -Force
-        Write-Output "Ajouté $userToAdd avec droits Full sur $shareName"
+        Grant-SmbShareAccess -Name $ShareName -AccountName $UserToAdd -AccessRight Full -Force
+        Write-Output "   ✅ Ajouté $UserToAdd avec droits Full SMB"
     } catch {
-        Write-Error "Erreur lors de l'ajout de $userToAdd sur $shareName : $_"
+        Write-Warning "   ❌ Erreur ajout $UserToAdd sur $ShareName → $_"
     }
 }
 
-# Fonction pour gérer les permissions NTFS
 function Update-NtfsPermissions {
     param(
-        [string]$path,
-        [string]$userToRemove,
-        [string]$userToAdd
+        [string]$Path,
+        [string]$UserToRemove,
+        [string]$UserToAdd
     )
 
-    Write-Output "Traitement NTFS du dossier : $path"
+    Write-Output "🔧 Traitement NTFS sur : $Path"
 
-    if (-Not (Test-Path $path)) {
-        Write-Warning "Le chemin $path n'existe pas, passage au suivant."
+    if (-not (Test-Path $Path)) {
+        Write-Warning "   ⚠️ Chemin $Path introuvable. Ignoré."
         return
     }
 
-    $acl = Get-Acl -Path $path
-
-    # Retirer les règles du user à supprimer
-    $rulesToRemove = $acl.Access | Where-Object { $_.IdentityReference -eq $userToRemove }
-    foreach ($rule in $rulesToRemove) {
-        $acl.RemoveAccessRule($rule)
-        Write-Output "Retiré $userToRemove des permissions NTFS sur $path"
-    }
-
-    # Ajouter administrateur domaine avec FullControl, héritage activé
-    $inheritFlags = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit"
-    $propagationFlags = [System.Security.AccessControl.PropagationFlags]::None
-    $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($userToAdd, "FullControl", $inheritFlags, $propagationFlags, "Allow")
-    $acl.AddAccessRule($accessRule)
-
-    # Appliquer les changements
     try {
-        Set-Acl -Path $path -AclObject $acl
-        Write-Output "Ajouté $userToAdd avec FullControl sur $path"
+        $acl = Get-Acl -Path $Path
+
+        # Supprimer les règles existantes
+        $toRemove = $acl.Access | Where-Object { $_.IdentityReference -eq $UserToRemove }
+        foreach ($rule in $toRemove) {
+            $acl.RemoveAccessRule($rule) | Out-Null
+            Write-Output "   ❌ Supprimé $UserToRemove des droits NTFS"
+        }
+
+        # Ajouter nouvel utilisateur
+        $inherit = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit"
+        $prop = [System.Security.AccessControl.PropagationFlags]::None
+        $newRule = New-Object System.Security.AccessControl.FileSystemAccessRule($UserToAdd, "FullControl", $inherit, $prop, "Allow")
+        $acl.AddAccessRule($newRule)
+
+        Set-Acl -Path $Path -AclObject $acl
+        Write-Output "   ✅ Ajouté $UserToAdd avec FullControl"
     } catch {
-        Write-Error "Erreur lors de la modification des permissions NTFS sur $path : $_"
+        Write-Warning "   ❌ Erreur permissions NTFS sur $Path → $_"
     }
 }
 
-# Exécution des mises à jour
-foreach ($share in $sharesAndPaths.Keys) {
-    $path = $sharesAndPaths[$share]
+# Execution
+foreach ($share in $ShareAndPathMap.Keys) {
+    $path = $ShareAndPathMap[$share]
 
-    Update-SmbShareAccess -shareName $share -userToRemove $userToRemove -userToAdd $domainAdmin
-    Update-NtfsPermissions -path $path -userToRemove $userToRemove -userToAdd $domainAdmin
+    Update-SmbShareAccess -ShareName $share -UserToRemove $UserToRemove -UserToAdd $UserToAdd
+    Update-NtfsPermissions -Path $path -UserToRemove $UserToRemove -UserToAdd $UserToAdd
 }
 
-Write-Output "Script terminé."
+Write-Host "`n✅ Script terminé." -ForegroundColor Green
